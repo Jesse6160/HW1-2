@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Grid Map Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .controls input[type="number"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            width: 60px;
+            margin-right: 10px;
+        }
+
+        .controls button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .controls button:hover {
+            background-color: #45a049;
+        }
+
+        .grid-container {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .grid {
+            display: grid;
+            gap: 4px;
+            background-color: #e0e0e0;
+            padding: 4px;
+            border-radius: 5px;
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            background-color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #333;
+            position: relative;
+        }
+
+        .cell:hover {
+            transform: scale(1.05);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .start {
+            background-color: #4CAF50;
+            border-color: #4CAF50;
+            color: white;
+        }
+
+        .end {
+            background-color: #f44336;
+            border-color: #f44336;
+            color: white;
+        }
+
+        .obstacle {
+            background-color: #757575;
+            border-color: #757575;
+            color: white;
+        }
+
+        .policy {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .value {
+            font-size: 12px;
+        }
+
+        .status {
+            margin-top: 15px;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <label for="size">Grid Size (5-9):</label>
+        <input type="number" id="size" min="5" max="9" value="5">
+        <button onclick="initGrid()">Create Grid</button>
+    </div>
+    <div class="grid-container">
+        <div id="gridContainer"></div>
+    </div>
+    <div class="status" id="status">Click to set start point</div>
+
+    <script>
+        let currentMode = 'start';
+        let obstacleCount = 0;
+        let maxObstacles = 0;
+
+        function initGrid() {
+            const size = document.getElementById('size').value;
+            fetch('/init_grid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ size: size })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    renderGrid(data.size, data.policy);
+                    obstacleCount = 0;
+                    maxObstacles = data.size - 2;
+                    currentMode = 'start';
+                    updateStatus('Click to set start point');
+                }
+            });
+        }
+
+        function renderGrid(size, policy) {
+            const container = document.getElementById('gridContainer');
+            container.innerHTML = '';
+            container.style.gridTemplateColumns = `repeat(${size}, 60px)`;
+            container.className = 'grid';
+
+            let cellNumber = 1;
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = i;
+                    cell.dataset.y = j;
+                    cell.dataset.number = cellNumber;
+
+                    const policySpan = document.createElement('span');
+                    policySpan.className = 'policy';
+                    policySpan.textContent = policy[i][j];
+                    const numberSpan = document.createElement('span');
+                    numberSpan.className = 'value';
+                    numberSpan.textContent = cellNumber;
+
+                    cell.appendChild(policySpan);
+                    cell.appendChild(numberSpan);
+                    cell.onclick = handleCellClick;
+                    container.appendChild(cell);
+                    cellNumber++;
+                }
+            }
+        }
+
+        function handleCellClick(e) {
+            const x = parseInt(e.target.dataset.x || e.target.parentElement.dataset.x);
+            const y = parseInt(e.target.dataset.y || e.target.parentElement.dataset.y);
+
+            fetch('/update_cell', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: x, y: y, type: currentMode })
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateGridDisplay(data);
+                updateMode();
+            });
+        }
+
+        function updateGridDisplay(state) {
+            const cells = document.getElementsByClassName('cell');
+            for (let cell of cells) {
+                cell.className = 'cell';
+                const policySpan = cell.querySelector('.policy');
+                const valueSpan = cell.querySelector('.value');
+                const i = parseInt(cell.dataset.x);
+                const j = parseInt(cell.dataset.y);
+                policySpan.textContent = state.policy[i][j];
+                valueSpan.textContent = state.values ? state.values[i][j].toFixed(2) : cell.dataset.number;
+            }
+
+            if (state.start) {
+                const startCell = document.querySelector(`[data-x="${state.start[0]}"][data-y="${state.start[1]}"]`);
+                startCell.className = 'cell start';
+            }
+            if (state.end) {
+                const endCell = document.querySelector(`[data-x="${state.end[0]}"][data-y="${state.end[1]}"]`);
+                endCell.className = 'cell end';
+            }
+            state.obstacles.forEach(([x, y]) => {
+                const obsCell = document.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+                obsCell.className = 'cell obstacle';
+            });
+        }
+
+        function updateMode() {
+            if (currentMode === 'start') {
+                currentMode = 'end';
+                updateStatus('Click to set end point');
+            } else if (currentMode === 'end') {
+                currentMode = 'obstacle';
+                updateStatus(`Click to set obstacles (${obstacleCount}/${maxObstacles})`);
+            } else if (currentMode === 'obstacle' && obstacleCount < maxObstacles) {
+                obstacleCount++;
+                updateStatus(`Click to set obstacles (${obstacleCount}/${maxObstacles})`);
+                if (obstacleCount === maxObstacles) {
+                    updateStatus('Grid setup complete! Optimal policy computed.');
+                }
+            }
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+    </script>
+</body>
+</html>
